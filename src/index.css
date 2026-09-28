@@ -1,0 +1,113 @@
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,400&family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,700&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --tb-bg: #0b1118;
+  --tb-panel: #111c28;
+  --tb-panel-2: #18252d;
+  --tb-lime: #bef264;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  background-color: var(--tb-bg);
+  color: #f1f5f9;
+  font-family: 'DM Sans', ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.font-serif,
+.tb-serif {
+  font-family: 'Fraunces', ui-serif, Georgia, serif;
+}
+
+.tb-mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+/* thin dark scrollbar */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.14) transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.14);
+  border-radius: 9999px;
+}
+
+@keyframes tb-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes tb-scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes tb-pop {
+  0% {
+    transform: translateY(12px) scale(0.98);
+    opacity: 0;
+  }
+  100% {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes tb-bar {
+  0% {
+    background-position: 0% 50%;
+  }
+  100% {
+    background-position: 100% 50%;
+  }
+}
+
+.tb-anim-fade {
+  animation: tb-fade-in 0.45s ease-out both;
+}
+.tb-anim-scale {
+  animation: tb-scale-in 0.22s ease-out both;
+}
+.tb-anim-pop {
+  animation: tb-pop 0.3s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* caret used by the typing area */
+.tb-caret {
+  border-left: 2px solid var(--tb-lime);
+  animation: tb-caret-blink 1s steps(1) infinite;
+}
+@keyframes tb-caret-blink {
+  50% {
+    border-color: transparent;
+  }
+}
