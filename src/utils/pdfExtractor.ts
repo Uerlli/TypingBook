@@ -98,7 +98,7 @@ export async function extractPdf(
   // The loading task (not the document proxy) owns the worker/resources, so it
   // is the object responsible for cleanup. Keeping it in scope lets us destroy
   // it even when extraction throws halfway through.
-  const loadingTask = pdfjs.getDocument({ data, isEvalSupported: false });
+  const loadingTask = pdfjs.getDocument({ data });
   try {
     const doc = await loadingTask.promise;
     const total = doc.numPages;
@@ -200,7 +200,7 @@ export async function extractPdf(
       flush();
     });
 
-    const text = blocks.join("\n\n");
+    const text = blocks.join("\n\n").normalize("NFC");
     const fileName = file.name.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ").trim();
 
     return {

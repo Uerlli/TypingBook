@@ -1,4 +1,5 @@
-import type { BookFormat, BookMeta } from "@/types";
+import type { BookFormat, BookMeta, SessionSettings } from "@/types";
+import { DEFAULT_SESSION_SETTINGS } from "@/types";
 import { countWords } from "@/utils/contentClassifier";
 
 export const WORDS_PER_SESSION = 320;
@@ -38,6 +39,9 @@ export function estimateBookMetadata(input: EstimateInput): BookMeta {
   const words = countWords(input.text);
   const totalSessions = Math.max(1, Math.ceil(words / WORDS_PER_SESSION));
   return {
+    ...DEFAULT_SESSION_SETTINGS,
+    contentLength: input.text.normalize("NFC").length,
+    readingOffset: 0,
     id: input.id ?? createBookId(),
     title: input.title.trim() || "Documento sem título",
     author: input.author.trim() || "Autor desconhecido",

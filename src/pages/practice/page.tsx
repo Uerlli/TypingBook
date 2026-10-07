@@ -1,16 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import type { SessionResult } from "@/types";
+import type { SessionResult, SessionSettings } from "@/types";
+import { DEFAULT_SESSION_SETTINGS } from "@/types";
 import AppHeader from "@/components/AppHeader";
 import TypingArea from "@/components/TypingArea";
 import ResultsModal from "@/components/ResultsModal";
 import { useLibrary } from "@/hooks/useLibrary";
-import { buildSessions } from "@/utils/sessions";
+import { buildSessionsForSettings, normalizeContent } from "@/utils/sessions";
+import SessionSettingsPanel from "@/components/SessionSettings";
 
 export default function Practice() {
   const { bookId } = useParams();
   const navigate = useNavigate();
-  const { books, lastBookId, loadContent, recordSession } = useLibrary();
+  const { books, lastBookId, loadContent, recordSession, updateBook } = useLibrary();
 
   const [content, setContent] = useState<string | null>(null);
   const [sessionIndex, setSessionIndex] = useState(0);
@@ -18,6 +20,7 @@ export default function Practice() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const initializedRef = useRef<string | null>(null);
+  const [readingOffset, setReadingOffset] = useState(0);
 
   const book = useMemo(
     () => books.find((b) => b.id === bookId) ?? books.find((b) => b.id === lastBookId) ?? null,
@@ -40,7 +43,7 @@ export default function Practice() {
           setError("Não encontramos o texto deste livro. Importe-o novamente.");
           setContent(null);
         } else {
-          setContent(text);
+          setContent(normalizeContent(text));
         }
         setLoading(false);
       })
@@ -54,7 +57,14 @@ export default function Practice() {
     };
   }, [targetId, loadContent]);
 
-  const sessions = useMemo(() => (content ? buildSessions(content) : []), [content]);
+  const settings: SessionSettings = {
+    sessionMode: book?.sessionMode ?? DEFAULT_SESSION_SETTINGS.sessionMode,
+    wordsPerSession: book?.wordsPerSession ?? DEFAULT_SESSION_SETTINGS.wordsPerSession,
+    sentencesPerSession: book?.sentencesPerSession ?? DEFAULT_SESSION_SETTINGS.sentencesPerSession,
+    durationMinutes: book?.durationMinutes === undefined ? DEFAULT_SESSION_SETTINGS.durationMinutes : book.durationMinutes,
+  };
+  const timeMode = settings.sessionMode === "time";
+  const sessions = useMemo(() => content ? buildSessionsForSettings(content, settings) : [], [content, settings.sessionMode, settings.wordsPerSession, settings.sentencesPerSession]);
 
   // resume at the book's saved session, once per book
   useEffect(() => {
@@ -62,21 +72,31 @@ export default function Practice() {
     if (initializedRef.current === targetId) return;
     initializedRef.current = targetId;
     setSessionIndex(Math.min(book?.currentSession ?? 0, sessions.length - 1));
-  }, [targetId, sessions.length, book?.currentSession]);
+    setReadingOffset(Math.min(book?.readingOffset ?? 0, content?.length ?? 0));
+  }, [targetId, sessions.length, book?.currentSession, book?.readingOffset, content]);
 
   const safeIndex = Math.min(sessionIndex, Math.max(sessions.length - 1, 0));
+  const sessionText = timeMode ? (content?.slice(readingOffset, readingOffset + 6000) ?? "") : sessions[safeIndex] ?? "";
 
   const handleComplete = useCallback(
     (sessionResult: SessionResult) => {
       setResult(sessionResult);
-      if (targetId) recordSession(targetId, safeIndex, sessionResult);
+      if (targetId) {
+        recordSession(targetId, safeIndex, sessionResult);
+        if (timeMode && content) {
+          const consumed = sessionResult.consumedCharacters ?? sessionResult.cursorCharacters ?? 0;
+          const next = Math.min(content.length, readingOffset + consumed);
+          setReadingOffset(next);
+          updateBook(targetId, { readingOffset: next, contentLength: content.length, progress: Math.round((next / content.length) * 100), ...settings });
+        }
+      }
     },
-    [targetId, safeIndex, recordSession]
+    [targetId, safeIndex, recordSession, timeMode, content, readingOffset, updateBook, settings]
   );
 
   const goToLibrary = () => navigate("/");
 
-  const hasNext = safeIndex < sessions.length - 1;
+  const hasNext = timeMode ? readingOffset < (content?.length ?? 0) : safeIndex < sessions.length - 1;
 
   const handleNext = () => {
     setResult(null);
@@ -105,7 +125,7 @@ export default function Practice() {
             </h1>
             {book && (
               <p className="mt-1 text-xs text-slate-500">
-                {book.author} · sessão {safeIndex + 1} de {Math.max(sessions.length, 1)}
+                {book.author} · {timeMode ? "leitura por tempo" : `sessão ${safeIndex + 1} de ${Math.max(sessions.length, 1)}`}
               </p>
             )}
           </div>
@@ -119,6 +139,12 @@ export default function Practice() {
           )}
         </div>
 
+        {book && !loading && <SessionSettingsPanel value={settings} onChange={(next) => {
+          const nextSessions = content ? buildSessionsForSettings(content, next) : [];
+          updateBook(book.id, { ...next, readingOffset, totalSessions: next.sessionMode === "time" ? 0 : nextSessions.length, currentSession: 0, completedSessions: 0, completedSessionIndexes: [] });
+          setSessionIndex(0); setResult(null);
+        }} />}
+
         {loading && (
           <div className="flex flex-col items-center justify-center rounded-[28px] border border-white/[0.08] bg-[#111c28] py-20 text-center">
             <i className="ri-loader-4-line animate-spin text-2xl text-lime-300"></i>
@@ -126,7 +152,7 @@ export default function Practice() {
           </div>
         )}
 
-        {!loading && (error || !book || sessions.length === 0) && (
+        {!loading && (error || !book || sessionText.length === 0) && (
           <div className="flex flex-col items-center justify-center rounded-[28px] border border-white/[0.08] bg-[#111c28] py-20 text-center">
             <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-rose-400/10 text-rose-300">
               <i className="ri-error-warning-line text-xl"></i>
@@ -144,10 +170,12 @@ export default function Practice() {
           </div>
         )}
 
-        {!loading && !error && book && sessions.length > 0 && (
+        {!loading && !error && book && sessionText.length > 0 && (
           <TypingArea
-            key={`${targetId}-${safeIndex}`}
-            text={sessions[safeIndex]}
+            key={`${targetId}-${safeIndex}-${readingOffset}`}
+            text={sessionText}
+            timed={timeMode}
+            durationMinutes={settings.durationMinutes}
             onComplete={handleComplete}
           />
         )}

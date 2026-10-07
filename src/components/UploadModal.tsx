@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent } from "react";
-import type { BookMeta, ClassifiedBlock, ExtractedDocument } from "@/types";
+import type { BookMeta, ClassifiedBlock, ExtractedDocument, SessionSettings } from "@/types";
+import { DEFAULT_SESSION_SETTINGS } from "@/types";
 import BlockReview from "@/components/BlockReview";
 import { classifyBlocks, countWords, joinBlocks } from "@/utils/contentClassifier";
 import { detectFormat, extractDocument } from "@/utils/extractDocument";
 import { estimateBookMetadata } from "@/utils/metadata";
-import { formatNumber } from "@/utils/sessions";
+import { buildSentenceSessions, formatNumber } from "@/utils/sessions";
 
 type Step = "select" | "extracting" | "review";
 
@@ -30,6 +31,7 @@ export default function UploadModal({ open, onClose, onConfirm }: UploadModalPro
   const [error, setError] = useState("");
   const [dragActive, setDragActive] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [sessionSettings, setSessionSettings] = useState<SessionSettings>(DEFAULT_SESSION_SETTINGS);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const reset = useCallback(() => {
@@ -42,6 +44,7 @@ export default function UploadModal({ open, onClose, onConfirm }: UploadModalPro
     setError("");
     setDragActive(false);
     setSaving(false);
+    setSessionSettings(DEFAULT_SESSION_SETTINGS);
   }, []);
 
   useEffect(() => {
@@ -124,6 +127,13 @@ export default function UploadModal({ open, onClose, onConfirm }: UploadModalPro
       author: doc.author,
       format: doc.format,
       text: filtered,
+    });
+    Object.assign(meta, sessionSettings, {
+      totalSessions: sessionSettings.sessionMode === "time"
+        ? 0
+        : sessionSettings.sessionMode === "sentences"
+          ? buildSentenceSessions(filtered, sessionSettings.sentencesPerSession).length
+          : Math.max(1, Math.ceil(includedWords / sessionSettings.wordsPerSession)),
     });
     await onConfirm({ meta, rawContent: doc.text, filteredContent: filtered });
     setSaving(false);
@@ -255,6 +265,17 @@ export default function UploadModal({ open, onClose, onConfirm }: UploadModalPro
 
           {step === "review" && doc && (
             <>
+              <div className="mb-5 rounded-2xl border border-white/[0.08] bg-white/[0.02] p-4">
+                <div className="mb-3 text-[10px] font-semibold uppercase tracking-[0.2em] text-lime-300">modo das sessões</div>
+                <div className="flex flex-wrap gap-3">
+                  <select className="rounded-xl border border-white/10 bg-[#111c28] px-3 py-2 text-sm text-slate-200" value={sessionSettings.sessionMode} onChange={e => setSessionSettings(v => ({ ...v, sessionMode: e.target.value as SessionSettings["sessionMode"] }))}>
+                    <option value="words">Por palavras</option><option value="sentences">Por frases</option><option value="time">Por tempo</option>
+                  </select>
+                  {sessionSettings.sessionMode === "words" && <select className="rounded-xl border border-white/10 bg-[#111c28] px-3 py-2 text-sm text-slate-200" value={sessionSettings.wordsPerSession} onChange={e => setSessionSettings(v => ({ ...v, wordsPerSession: Number(e.target.value) as SessionSettings["wordsPerSession"] }))}><option value={100}>100 palavras</option><option value={250}>250 palavras</option><option value={500}>500 palavras</option></select>}
+                  {sessionSettings.sessionMode === "sentences" && <select className="rounded-xl border border-white/10 bg-[#111c28] px-3 py-2 text-sm text-slate-200" value={sessionSettings.sentencesPerSession} onChange={e => setSessionSettings(v => ({ ...v, sentencesPerSession: Number(e.target.value) as 1 | 2 }))}><option value={1}>1 frase</option><option value={2}>2 frases</option></select>}
+                  {sessionSettings.sessionMode === "time" && <select className="rounded-xl border border-white/10 bg-[#111c28] px-3 py-2 text-sm text-slate-200" value={sessionSettings.durationMinutes ?? "free"} onChange={e => setSessionSettings(v => ({ ...v, durationMinutes: e.target.value === "free" ? null : Number(e.target.value) as SessionSettings["durationMinutes"] }))}><option value={1}>1 minuto</option><option value={2}>2 minutos</option><option value={3}>3 minutos</option><option value={4}>4 minutos</option><option value={5}>5 minutos</option><option value="free">Livre</option></select>}
+                </div>
+              </div>
               <BlockReview
                 blocks={blocks}
                 included={included}

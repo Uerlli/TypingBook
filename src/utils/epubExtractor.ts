@@ -153,7 +153,7 @@ export async function extractEpub(
     title: title || fileName || "Documento EPUB",
     author,
     format: "epub",
-    text: blocks.join("\n\n"),
+    text: blocks.join("\n\n").normalize("NFC"),
     blocks,
     structuralHints,
   };

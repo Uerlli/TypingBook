@@ -4,6 +4,7 @@ interface StatsBarProps {
   accuracy: number;
   seconds: number;
   progress: number;
+  countdown?: boolean;
 }
 
 function formatTime(seconds: number): string {
@@ -12,12 +13,12 @@ function formatTime(seconds: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
-export default function StatsBar({ wpm, rawWpm, accuracy, seconds, progress }: StatsBarProps) {
+export default function StatsBar({ wpm, rawWpm, accuracy, seconds, progress, countdown = false }: StatsBarProps) {
   const items = [
     { label: "ritmo", value: wpm, unit: "WPM", icon: "ri-speed-line" },
     { label: "bruto", value: rawWpm, unit: "WPM", icon: "ri-dashboard-3-line" },
     { label: "precisão", value: `${accuracy}%`, icon: "ri-focus-3-line" },
-    { label: "tempo", value: formatTime(seconds), icon: "ri-timer-line" },
+    { label: countdown ? "restante" : "tempo", value: formatTime(seconds), icon: "ri-timer-line" },
   ];
 
   return (
@@ -25,6 +26,7 @@ export default function StatsBar({ wpm, rawWpm, accuracy, seconds, progress }: S
       {items.map((item) => (
         <div
           key={item.label}
+          title={item.label === "ritmo" ? "WPM líquido: somente caracteres corretos por minuto." : item.label === "bruto" ? "WPM bruto: todas as teclas, incluindo erros e Backspace, por minuto." : item.label === "precisão" ? "Percentual de posições corretas." : "Tempo decorrido ou restante."}
           className="flex items-center gap-3 rounded-2xl border border-white/[0.08] bg-white/[0.035] px-4 py-2.5"
         >
           <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-lime-300/10 text-lime-300">

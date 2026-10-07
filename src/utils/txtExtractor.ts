@@ -5,7 +5,7 @@ export async function extractTxt(
   onProgress?: (p: ExtractProgress) => void
 ): Promise<ExtractedDocument> {
   onProgress?.({ current: 1, total: 1, label: "Lendo arquivo de texto…" });
-  const text = await file.text();
+  const text = (await file.text()).normalize("NFC");
   const normalized = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
 
   const fileName = file.name.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ").trim();

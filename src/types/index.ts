@@ -1,7 +1,16 @@
+export type SessionMode = "words" | "sentences" | "time";
+export interface SessionSettings { sessionMode: SessionMode; wordsPerSession: 100 | 250 | 500; sentencesPerSession: 1 | 2; durationMinutes: 1 | 2 | 3 | 4 | 5 | null; }
+export const DEFAULT_SESSION_SETTINGS: SessionSettings = { sessionMode: "words", wordsPerSession: 250, sentencesPerSession: 1, durationMinutes: 1 };
 export type BookFormat = "pdf" | "epub" | "txt";
 
 /** Light metadata persisted in localStorage (never the full text). */
 export interface BookMeta {
+  sessionMode?: SessionMode;
+  wordsPerSession?: 100 | 250 | 500;
+  sentencesPerSession?: 1 | 2;
+  durationMinutes?: 1 | 2 | 3 | 4 | 5 | null;
+  readingOffset?: number;
+  contentLength?: number;
   id: string;
   title: string;
   author: string;
@@ -53,6 +62,10 @@ export interface ExtractProgress {
 }
 
 export interface SessionResult {
+  consumedCharacters?: number;
+  cursorCharacters?: number;
+  correctedWords?: number;
+  skippedWords?: number;
   /** Net words per minute — based on correctly typed characters only. */
   wpm: number;
   /** Gross words per minute — every keystroke counts, errors included. */

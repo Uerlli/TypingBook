@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode, type KeyboardEvent } from "react";
 import type { ErrorPatternStat, SessionResult } from "@/types";
 import StatsBar from "@/components/StatsBar";
 import VirtualKeyboard from "@/components/VirtualKeyboard";
@@ -8,6 +8,8 @@ import { computeAccuracy, computeWpm } from "@/utils/sessions";
 interface TypingAreaProps {
   text: string;
   onComplete: (result: SessionResult) => void;
+  timed?: boolean;
+  durationMinutes?: number | null;
 }
 
 interface HistoryEntry {
@@ -19,7 +21,7 @@ interface HistoryEntry {
 
 const EMPTY_MARK = "∅";
 
-export default function TypingArea({ text, onComplete }: TypingAreaProps) {
+export default function TypingArea({ text, onComplete, timed = false, durationMinutes = null }: TypingAreaProps) {
   const [typed, setTyped] = useState("");
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [now, setNow] = useState(() => Date.now());
@@ -34,6 +36,12 @@ export default function TypingArea({ text, onComplete }: TypingAreaProps) {
   const historyRef = useRef<Map<string, HistoryEntry>>(new Map());
   const reportedRef = useRef(false);
   const completedRef = useRef(false);
+  const correctingWordRef = useRef(false);
+  const wordMarksRef = useRef<Map<number, "corrected" | "skipped">>(new Map());
+  const [wordMarks, setWordMarks] = useState<Map<number, "corrected" | "skipped">>(new Map());
+  const skippedCharsRef = useRef(0);
+  const skippedWordsRef = useRef(0);
+  const correctedWordsRef = useRef(0);
 
   // Current state of the text, recomputed whenever `typed` changes.
   const alignment = useMemo(() => alignTyping(typed, text), [typed, text]);
@@ -46,9 +54,13 @@ export default function TypingArea({ text, onComplete }: TypingAreaProps) {
 
   useEffect(() => {
     if (!startedAt || done) return undefined;
-    const id = window.setInterval(() => setNow(Date.now()), 400);
+    const id = window.setInterval(() => {
+      const current = Date.now();
+      setNow(current);
+      if (timed && durationMinutes !== null && current - startedAt >= durationMinutes * 60000) setDone(true);
+    }, 400);
     return () => window.clearInterval(id);
-  }, [startedAt, done]);
+  }, [startedAt, done, timed, durationMinutes]);
 
   useEffect(() => {
     currentRef.current?.scrollIntoView({ block: "nearest" });
@@ -87,6 +99,12 @@ export default function TypingArea({ text, onComplete }: TypingAreaProps) {
     historyRef.current = new Map();
     reportedRef.current = false;
     completedRef.current = false;
+    correctingWordRef.current = false;
+    wordMarksRef.current = new Map();
+    setWordMarks(new Map());
+    skippedCharsRef.current = 0;
+    skippedWordsRef.current = 0;
+    correctedWordsRef.current = 0;
     setTyped("");
     setStartedAt(null);
     setNow(Date.now());
@@ -130,6 +148,7 @@ export default function TypingArea({ text, onComplete }: TypingAreaProps) {
     const patterns = Array.from(patternMap.values()).sort((a, b) => b.count - a.count);
 
     const slots = countErrorSlots(counts);
+    const skippedCharacters = skippedCharsRef.current;
 
     onComplete({
       wpm: computeWpm(counts.correct, ms),
@@ -137,22 +156,31 @@ export default function TypingArea({ text, onComplete }: TypingAreaProps) {
       accuracy: slots > 0 ? computeAccuracy(counts.correct, slots) : 100,
       seconds: Math.round(ms / 1000),
       charactersTyped: grossRef.current,
-      correctCharacters: counts.correct,
+      correctCharacters: Math.max(0, counts.correct - skippedCharacters),
       totalErrors,
-      correctedErrors,
-      uncorrectedErrors: totalErrors - correctedErrors,
+      correctedErrors: correctedErrors + correctedWordsRef.current,
+      correctedWords: correctedWordsRef.current,
+      skippedWords: skippedWordsRef.current,
+      uncorrectedErrors: Math.max(0, totalErrors - correctedErrors),
       substitutions: entries.filter((e) => e.kind === "sub").length,
-      extraCharacters: entries.filter((e) => e.kind === "extra").length,
-      missingCharacters: entries.filter((e) => e.kind === "missing").length,
+      extraCharacters: 0,
+      missingCharacters: skippedCharacters,
       backspaces: backspacesRef.current,
       patterns,
+      consumedCharacters: typed.length,
+      cursorCharacters: typed.length,
     });
   }, [done, counts, onComplete]);
 
   const handleChange = (event: ChangeEvent<HTMLInputElement>) => {
     if (done) return;
-    const value = event.target.value;
+    const value = event.target.value.normalize("NFC");
     const previous = typedRef.current;
+
+    if (value.length > targetLength) {
+      event.target.value = previous;
+      return;
+    }
 
     if (startedRef.current === null && value.length > 0) {
       startedRef.current = Date.now();
@@ -164,10 +192,40 @@ export default function TypingArea({ text, onComplete }: TypingAreaProps) {
       grossRef.current += value.length - previous.length;
     } else if (value.length < previous.length) {
       backspacesRef.current += 1;
+      grossRef.current += 1;
+      correctingWordRef.current = true;
     }
 
     typedRef.current = value;
     setTyped(value);
+  };
+
+  const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    if (!correctingWordRef.current) return;
+    const value = typedRef.current;
+    const wordStart = Math.max(0, text.slice(0, value.length).search(/\S+$/));
+    const wordEndMatch = text.slice(wordStart).match(/^\S+/);
+    if (!wordEndMatch) return;
+    const wordEnd = wordStart + wordEndMatch[0].length;
+    const next = text[wordEnd] === " " ? wordEnd + 1 : wordEnd;
+    const current = value.slice(wordStart, Math.min(value.length, wordEnd));
+    const expected = text.slice(wordStart, wordEnd);
+    if (current === expected) {
+      correctedWordsRef.current += 1;
+      wordMarksRef.current.set(wordStart, "corrected");
+    } else {
+      skippedWordsRef.current += 1;
+      skippedCharsRef.current += Math.max(0, wordEnd - value.length);
+      wordMarksRef.current.set(wordStart, "skipped");
+    }
+    setWordMarks(new Map(wordMarksRef.current));
+    const advanced = value + text.slice(value.length, next);
+    typedRef.current = advanced;
+    setTyped(advanced);
+    correctingWordRef.current = false;
+    if (advanced.length === targetLength) setDone(true);
   };
 
   const elapsedMs = startedAt ? Math.max(now - startedAt, 1) : 0;
@@ -178,7 +236,7 @@ export default function TypingArea({ text, onComplete }: TypingAreaProps) {
   const progress = targetLength
     ? Math.min(100, (cursorTargetIndex / targetLength) * 100)
     : 0;
-  const seconds = Math.round(elapsedMs / 1000);
+  const seconds = timed && durationMinutes !== null ? Math.max(0, Math.ceil(durationMinutes * 60 - elapsedMs / 1000)) : Math.round(elapsedMs / 1000);
   const nextChar = done ? "" : text[cursorTargetIndex] ?? "";
   const caretIndex = done ? -1 : cells.findIndex((cell) => cell.status === "pending");
 
@@ -205,6 +263,7 @@ export default function TypingArea({ text, onComplete }: TypingAreaProps) {
         accuracy={liveAccuracy}
         seconds={seconds}
         progress={progress}
+        countdown={timed && durationMinutes !== null}
       />
 
       <div
@@ -239,11 +298,10 @@ export default function TypingArea({ text, onComplete }: TypingAreaProps) {
               );
             }
             let inner: ReactNode = cell.char;
-            if (cell.status === "extra") {
-              inner = cell.char === " " ? "␣" : cell.char;
-            }
+            const wordStart = text.slice(0, index).search(/\S+$/);
+            const mark = wordMarks.get(Math.max(0, wordStart));
             return (
-              <span key={index} className={renderCell(cell.status)}>
+              <span key={index} className={`${renderCell(cell.status)} ${mark === "corrected" ? "underline decoration-lime-300 decoration-1 underline-offset-4" : mark === "skipped" ? "underline decoration-amber-300 decoration-1 underline-offset-4" : ""}`}>
                 {inner}
               </span>
             );
@@ -259,7 +317,9 @@ export default function TypingArea({ text, onComplete }: TypingAreaProps) {
           ref={inputRef}
           value={typed}
           onChange={handleChange}
+          onKeyDown={handleKeyDown}
           disabled={done}
+          maxLength={targetLength}
           autoComplete="off"
           autoCorrect="off"
           autoCapitalize="off"
@@ -282,6 +342,7 @@ export default function TypingArea({ text, onComplete }: TypingAreaProps) {
           pulados em âmbar — corrigir com backspace registra o erro como resolvido, sem
           bagunçar a precisão.
         </p>
+        {timed && durationMinutes === null && <button type="button" disabled={!startedAt || done} onClick={() => setDone(true)} className="rounded-xl border border-lime-300/30 bg-lime-300/10 px-4 py-3 text-[13px] font-semibold text-lime-200 disabled:opacity-40">encerrar sessão</button>}
       </div>
 
       <VirtualKeyboard nextChar={nextChar} />
